@@ -1,10 +1,9 @@
-namespace Chickensoft.Chicken.Tests;
+namespace Bloc.NET.Tests;
 
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using GoDotNet;
 using Shouldly;
 using Xunit;
 

@@ -1,4 +1,4 @@
-namespace Chickensoft.GoDotNet;
+namespace Bloc.NET;
 
 using System;
 using System.Collections.Generic;
