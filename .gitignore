@@ -1,0 +1,11 @@
+Bloc.NET/nupkg/
+
+Bloc.NET.Tests/coverage/*
+!Bloc.NET.Tests/coverage/.gdignore
+
+.godot/
+bin/
+obj/
+.generated/
+.vs/
+.DS_Store
