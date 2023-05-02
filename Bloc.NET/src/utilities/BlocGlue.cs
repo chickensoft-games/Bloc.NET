@@ -15,9 +15,10 @@ public static class BlocGlueExtensions {
   /// <param name="bloc">The bloc to glue.</param>
   /// <typeparam name="TEvent">Type of the bloc's events.</typeparam>
   /// <typeparam name="TState">Type of the bloc's state.</typeparam>
-  /// <returns>A new <see cref="BlocGlue{TEvent, TState}" /></returns>
-  public static BlocGlue<TEvent, TState> Glue<TEvent, TState>(
-    this IBloc<TEvent, TState> bloc
+  /// <typeparam name="TAction">Type of the bloc's actions.</typeparam>
+  /// <returns>A new <see cref="BlocGlue{TEvent, TState, TAction}" /></returns>
+  public static BlocGlue<TEvent, TState, TAction> Glue<TEvent, TState, TAction>(
+    this IBloc<TEvent, TState, TAction> bloc
   ) where TState : notnull => new(bloc);
 }
 
@@ -29,11 +30,13 @@ public static class BlocGlueExtensions {
 /// </summary>
 /// <typeparam name="TEvent">Type of the bloc's events.</typeparam>
 /// <typeparam name="TState">Type of the bloc's state.</typeparam>
-public class BlocGlue<TEvent, TState> : IDisposable where TState : notnull {
+/// <typeparam name="TAction">Type of the bloc's actions.</typeparam>
+public class BlocGlue<TEvent, TState, TAction>
+  : IDisposable where TState : notnull {
   /// <summary>
   /// Bloc that is glued.
   /// </summary>
-  public IBloc<TEvent, TState> Bloc { get; }
+  public IBloc<TEvent, TState, TAction> Bloc { get; }
 
   private TState _previousState;
 
@@ -41,7 +44,7 @@ public class BlocGlue<TEvent, TState> : IDisposable where TState : notnull {
   private readonly Dictionary<Type, List<Action<TState, dynamic>>> _invokers =
     new();
 
-  internal BlocGlue(IBloc<TEvent, TState> bloc) {
+  internal BlocGlue(IBloc<TEvent, TState, TAction> bloc) {
     Bloc = bloc;
     _previousState = bloc.State;
     Bloc.OnNextState += OnNextState;
@@ -105,7 +108,7 @@ public class BlocGlue<TEvent, TState> : IDisposable where TState : notnull {
   internal interface IBlocStateGlue {
     /// <summary>
     /// Invoke all registered glue actions for a specific type of state. Used
-    /// by <see cref="BlocGlue{TEvent, TState}" />.
+    /// by <see cref="BlocGlue{TEvent, TState, TAction}" />.
     /// </summary>
     /// <param name="state">Current state of the bloc.</param>
     /// <param name="previous">Previous state of the bloc.</param>

@@ -2,6 +2,7 @@ namespace Bloc.NET.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Shouldly;
@@ -38,7 +39,7 @@ public class AsyncBlocTest {
   [Fact]
   public void Enumerates() {
     using var bloc = new TestBloc();
-    var enumerator = bloc.States.GetEnumerator();
+    var enumerator = bloc.States.ToEnumerable().GetEnumerator();
 
     enumerator.MoveNext();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE);
@@ -58,7 +59,7 @@ public class AsyncBlocTest {
   [Fact]
   public async Task EnumeratesAsync() {
     using var bloc = new TestBloc();
-    var enumerator = bloc.Stream.GetAsyncEnumerator();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
 
     await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE);
@@ -72,6 +73,101 @@ public class AsyncBlocTest {
     bloc.Add("+");
     await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 3);
+  }
+
+  [Fact]
+  public async Task UpdatesEventObservers() {
+    using var bloc = new TestBloc();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var @event = "+";
+    var streamWasCalled = false;
+    using var subscription = bloc.Events.Subscribe(
+      onNext: (@e) => {
+        @e.ShouldBe(@event);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var eventHandler = new EventHandler<string>((b, e) => {
+      b.ShouldBe(bloc);
+      e.ShouldBe(@event);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnEvent += eventHandler;
+
+    bloc.Add(@event);
+
+    await enumerator.MoveNextAsync();
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
+
+    bloc.OnEvent -= eventHandler;
+  }
+
+  [Fact]
+  public async Task UpdatesErrorObservers() {
+    using var bloc = new TestErrorBloc();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var streamWasCalled = false;
+    using var subscription = bloc.Errors.Subscribe(
+      onNext: (@e) => {
+        @e.ShouldBe(TestErrorBloc.Error);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var errorHandler = new EventHandler<Exception>((b, e) => {
+      b.ShouldBe(bloc);
+      e.ShouldBe(TestErrorBloc.Error);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnNextError += errorHandler;
+
+    bloc.Add("+");
+
+    await enumerator.MoveNextAsync();
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
+
+    bloc.OnNextError -= errorHandler;
+  }
+
+  [Fact]
+  public async Task UpdatesActionObservers() {
+    using var bloc = new TestBlocWithActions();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var streamWasCalled = false;
+    var expectedAction = 1;
+    using var subscription = bloc.Actions.Subscribe(
+      onNext: (action) => {
+        action.ShouldBe(expectedAction);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var actionHandler = new EventHandler<int>((b, action) => {
+      b.ShouldBe(bloc);
+      action.ShouldBe(expectedAction);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnAction += actionHandler;
+
+    bloc.Add("+");
+
+    await enumerator.MoveNextAsync();
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
+
+    bloc.OnAction -= actionHandler;
   }
 
   [Fact]
@@ -216,6 +312,12 @@ public class AsyncBlocTest {
     onCanceledCalled.ShouldBeTrue();
   }
 
+  [Fact]
+  public void BlocClassicCannotTriggerAction() {
+    using var bloc = new TestBlocClassicTrigger();
+    Should.Throw<InvalidOperationException>(() => bloc.Trigger());
+  }
+
   public static class Utils {
     public static void ClearWeakReference(WeakReference weakReference) {
       weakReference.Target = null;
@@ -226,16 +328,18 @@ public class AsyncBlocTest {
 
   public static WeakReference CreateWeakReference() => new(new TestBloc());
 
-  public class TestErrorBloc : AsyncBloc<string, int> {
+  public class TestErrorBloc : Bloc<string, int> {
     public const int INITIAL_STATE = 0;
+
+    public static Exception Error { get; } = new InvalidOperationException();
 
     public TestErrorBloc() : base(INITIAL_STATE) { }
 
     public override IAsyncEnumerable<int> MapEventToState(string @event)
-      => throw new InvalidOperationException();
+      => throw Error;
   }
 
-  public class TestError2Bloc : AsyncBloc<string, int> {
+  public class TestError2Bloc : Bloc<string, int> {
     public const int INITIAL_STATE = 0;
 
     public TestError2Bloc() : base(INITIAL_STATE) { }
@@ -249,7 +353,7 @@ public class AsyncBlocTest {
     }
   }
 
-  public class TestBloc : AsyncBloc<string, int> {
+  public class TestBloc : Bloc<string, int> {
     public const int INITIAL_STATE = 0;
 
     public TestBloc() : base(INITIAL_STATE) { }
@@ -272,6 +376,48 @@ public class AsyncBlocTest {
     ~TestBloc() {
       WasBlocClosed = true;
     }
+  }
+
+  public class TestBlocWithActions : AsyncBloc<string, int, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestBlocWithActions() : base(INITIAL_STATE) { }
+
+    public override async IAsyncEnumerable<int> MapEventToState(string @event) {
+      switch (@event) {
+        case "+": {
+            var state = State + 1;
+            Trigger(state);
+            yield return state;
+            break;
+          }
+        case "-": {
+            var state = State - 1;
+            Trigger(state);
+            yield return state;
+            break;
+          }
+        default:
+          yield return State;
+          break;
+      }
+      await Task.CompletedTask;
+    }
+
+    ~TestBlocWithActions() {
+      WasBlocClosed = true;
+    }
+  }
+
+  public class TestBlocClassicTrigger : Bloc<string, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestBlocClassicTrigger() : base(INITIAL_STATE) { }
+
+    public override IAsyncEnumerable<int> MapEventToState(string @event) =>
+      throw new NotImplementedException();
+
+    public void Trigger() => Trigger("action");
   }
 
   public class MyObject {

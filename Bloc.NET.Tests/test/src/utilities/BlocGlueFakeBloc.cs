@@ -14,7 +14,7 @@ public partial class BlocGlueTests {
     public record StateB(string Value1, string Value2) : FakeBlocState;
   }
 
-  public class FakeBloc : SyncBloc<IFakeBlocEvent, FakeBlocState> {
+  public class FakeBloc : SyncBlocClassic<IFakeBlocEvent, FakeBlocState> {
     public FakeBloc() : base(new FakeBlocState.StateA(1, 2)) { }
 
     public override IEnumerable<FakeBlocState> MapEventToState(

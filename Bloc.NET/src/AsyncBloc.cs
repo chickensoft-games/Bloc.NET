@@ -15,8 +15,9 @@ using System.Runtime.CompilerServices;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public abstract class AsyncBloc<TEvent, TState> : GenericBloc<TEvent, TState>
-  where TState : IEquatable<TState> {
+/// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
+public abstract class AsyncBloc<TEvent, TState, TAction>
+  : GenericBloc<TEvent, TState, TAction> where TState : IEquatable<TState> {
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>
@@ -40,4 +41,36 @@ public abstract class AsyncBloc<TEvent, TState> : GenericBloc<TEvent, TState>
   protected sealed override bool ShouldThrow(Exception e) => false;
   // Async blocs shouldn't throw exceptions when adding an event. Adding the
   // error to the error stream is sufficient.
+}
+
+/// <summary>
+/// <para>
+/// A bloc is a component that processes events and maintains a state. In
+/// game development, blocs can be used in place of traditional state machines,
+/// HSM's, or state charts. While blocs are not as rigorously defined as state
+/// machines, they are easy to test and offer increased flexibility (and often
+/// require less code).
+/// </para>
+/// <para>
+/// Unlike <see cref="AsyncBloc{TEvent, TState, TAction}"/>, this bloc cannot
+/// trigger actions. The lack of actions replicates the API surface of the
+/// original bloc library for Flutter and is useful when you do not need blocs
+/// to trigger one-shot actions unrelated to state.
+/// </para>
+/// </summary>
+/// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
+/// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
+public abstract class Bloc<TEvent, TState>
+  : AsyncBloc<TEvent, TState, object> where TState : IEquatable<TState> {
+  /// <summary>
+  /// Creates a new bloc with the given initial state.
+  /// </summary>
+  /// <param name="initialState">Initial state of the bloc.</param>
+  public Bloc(TState initialState) : base(initialState) { }
+
+  /// <inheritdoc/>
+  protected override void Trigger(object action) =>
+    throw new InvalidOperationException(
+      "This bloc does not support actions. Use an AsyncBloc to trigger actions."
+    );
 }
