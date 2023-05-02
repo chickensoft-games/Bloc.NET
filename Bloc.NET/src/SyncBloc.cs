@@ -15,8 +15,11 @@ using System.Runtime.CompilerServices;
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
 /// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class SyncBloc<TEvent, TState, TAction>
-  : GenericBloc<TEvent, TState, TAction> where TState : IEquatable<TState> {
+public abstract class SyncBloc<TEvent, TState, TAction> :
+  GenericBloc<TEvent, TState, TAction>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TAction : notnull {
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>
@@ -24,17 +27,15 @@ public abstract class SyncBloc<TEvent, TState, TAction>
   public SyncBloc(TState initialState) : base(initialState) { }
 
   /// <summary>
-  /// Whenever a bloc processes an event, this method is called with the event
-  /// and expected to return the next state of the bloc. This method is used
-  /// to map an event to a new state based on the bloc's current state.
+  /// Registers an event handler for a specific event type. The event handler
+  /// is a function that receives an event of a specific type and emits one or
+  /// more states in response to the event.
   /// </summary>
-  /// <param name="event">The event to process.</param>
-  public abstract IEnumerable<TState> MapEventToState(TEvent @event);
-
-  /// <inheritdoc/>
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  protected override IObservable<TState> ConvertEvent(TEvent @event) =>
-    MapEventToState(@event).ToObservable();
+  /// <param name="handler">Event handler.</param>
+  /// <typeparam name="TEventType">Type of the event.</typeparam>
+  protected void On<TEventType>(Func<TEventType, IEnumerable<TState>> handler)
+    where TEventType : TEvent =>
+      On<TEventType>((@event) => handler(@event).ToObservable());
 
   /// <inheritdoc/>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -59,8 +60,10 @@ public abstract class SyncBloc<TEvent, TState, TAction>
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public abstract class SyncBlocClassic<TEvent, TState>
-  : SyncBloc<TEvent, TState, object> where TState : IEquatable<TState> {
+public abstract class SyncBlocClassic<TEvent, TState> :
+  SyncBloc<TEvent, TState, object>
+  where TEvent : notnull
+  where TState : IEquatable<TState> {
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>

@@ -1,6 +1,7 @@
 namespace Bloc.NET;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -18,8 +19,11 @@ using WeakEvent;
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
 /// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class GenericBloc<TEvent, TState, TAction>
-  : BlocBase<TEvent, TState, TAction> where TState : IEquatable<TState> {
+public abstract class GenericBloc<TEvent, TState, TAction> :
+  BlocBase<TEvent, TState, TAction>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TAction : notnull {
   private readonly ISubject<TEvent> _eventController = new Subject<TEvent>();
   private readonly BehaviorSubject<TState> _stateController;
   private readonly ISubject<Exception> _errorController
@@ -33,6 +37,8 @@ public abstract class GenericBloc<TEvent, TState, TAction>
   private readonly ISubject<TAction> _actionController = new Subject<TAction>();
   private readonly WeakEventSource<TAction> _actionEventSource = new();
   private readonly IDisposable _actionSubscription;
+  private readonly Dictionary<Type, Func<dynamic, IObservable<TState>>>
+    _handlers = new();
 
   /// <inheritdoc/>
   public override TState State => _stateController.Value;
@@ -103,7 +109,7 @@ public abstract class GenericBloc<TEvent, TState, TAction>
         _eventEventSource.Raise(this, @event);
 
         try {
-          return ConvertEvent(@event);
+          return _handlers[@event.GetType()](@event);
         }
         catch (Exception e) {
           _errorController.OnNext(e);
@@ -133,12 +139,6 @@ public abstract class GenericBloc<TEvent, TState, TAction>
   }
 
   /// <summary>
-  /// Converts an event into an observable stream of states.
-  /// </summary>
-  /// <param name="event">Event to process.</param>
-  protected abstract IObservable<TState> ConvertEvent(TEvent @event);
-
-  /// <summary>
   /// Gives bloc implementations a chance to determine if an exception should
   /// be thrown. Throwing an exception breaks further event processing.
   /// </summary>
@@ -147,8 +147,37 @@ public abstract class GenericBloc<TEvent, TState, TAction>
   /// as an error to the bloc error stream.</returns>
   protected abstract bool ShouldThrow(Exception e);
 
+  /// <summary>
+  /// Registers an event handler for a specific event type. The event handler
+  /// is a function that receives an event of a specific type and emits one or
+  /// more states in response to the event.
+  /// </summary>
+  /// <param name="handler">Event handler.</param>
+  /// <typeparam name="TEventType">Type of the event.</typeparam>
+  /// <exception cref="InvalidOperationException"></exception>
+  protected void On<TEventType>(
+    Func<TEventType, IObservable<TState>> handler
+  ) where TEventType : TEvent {
+    var type = typeof(TEventType);
+    if (_handlers.ContainsKey(type)) {
+      throw new InvalidOperationException(
+        "Another handler was already registered for the event type " +
+        type.FullName + "."
+      );
+    }
+    _handlers.Add(typeof(TEventType), (e) => handler((TEventType)e));
+  }
+
   /// <inheritdoc/>
-  public override void Add(TEvent @event) => _eventController.OnNext(@event);
+  public override void Add(TEvent @event) {
+    var type = @event.GetType();
+    if (!_handlers.ContainsKey(type)) {
+      throw new InvalidOperationException(
+        $"No handler registered for the event type {type.FullName}."
+      );
+    }
+    _eventController.OnNext(@event);
+  }
 
   /// <inheritdoc/>
   protected override void AddError(Exception e) {

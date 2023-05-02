@@ -15,17 +15,21 @@ public partial class BlocGlueTests {
   }
 
   public class FakeBloc : SyncBlocClassic<IFakeBlocEvent, FakeBlocState> {
-    public FakeBloc() : base(new FakeBlocState.StateA(1, 2)) { }
+    public FakeBloc() : base(new FakeBlocState.StateA(1, 2)) {
+      On<IFakeBlocEvent.EventOne>(One);
+      On<IFakeBlocEvent.EventTwo>(Two);
+    }
 
-    public override IEnumerable<FakeBlocState> MapEventToState(
-      IFakeBlocEvent @event
+    private IEnumerable<FakeBlocState> One(
+      IFakeBlocEvent.EventOne @event
     ) {
-      if (@event is IFakeBlocEvent.EventOne one) {
-        yield return new FakeBlocState.StateA(one.Value1, one.Value2);
-      }
-      else if (@event is IFakeBlocEvent.EventTwo two) {
-        yield return new FakeBlocState.StateB(two.Value1, two.Value2);
-      }
+      yield return new FakeBlocState.StateA(@event.Value1, @event.Value2);
+    }
+
+    private IEnumerable<FakeBlocState> Two(
+      IFakeBlocEvent.EventTwo @event
+    ) {
+      yield return new FakeBlocState.StateB(@event.Value1, @event.Value2);
     }
   }
 }

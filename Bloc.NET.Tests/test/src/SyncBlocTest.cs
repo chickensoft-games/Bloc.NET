@@ -2,6 +2,7 @@ namespace Bloc.NET.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Reactive.Linq;
 using Shouldly;
 using Xunit;
 
@@ -15,6 +16,26 @@ public class SyncBlocTest {
   }
 
   [Fact]
+  public void Enumerates() {
+    using var bloc = new TestBloc();
+    var enumerator = bloc.States.ToEnumerable().GetEnumerator();
+
+    enumerator.MoveNext();
+    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE);
+
+    bloc.Add(new ITestEvent.Increment());
+    enumerator.MoveNext();
+    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 1);
+    bloc.Add(new ITestEvent.Increment());
+    enumerator.MoveNext();
+    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 2);
+
+    bloc.Add(new ITestEvent.Increment());
+    enumerator.MoveNext();
+    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 3);
+  }
+
+  [Fact]
   public void ListenHandlesError() {
     using var bloc = new TestErrorBloc();
     var onErrorCalled = false;
@@ -24,7 +45,7 @@ public class SyncBlocTest {
       onError: (_) => onErrorCalled = true
     );
 
-    Should.Throw<Exception>(() => bloc.Add("+"));
+    Should.Throw<Exception>(() => bloc.Add(new ITestEvent.Increment()));
 
     onErrorCalled.ShouldBeTrue();
   }
@@ -35,43 +56,42 @@ public class SyncBlocTest {
     Should.Throw<InvalidOperationException>(() => bloc.Trigger());
   }
 
-  public class TestBlocClassicTrigger : SyncBlocClassic<string, int> {
+  public interface ITestEvent {
+    public struct Increment : ITestEvent { }
+    public struct Decrement : ITestEvent { }
+    public struct Other : ITestEvent { }
+  }
+
+  public class TestBlocClassicTrigger : SyncBlocClassic<ITestEvent, int> {
     public const int INITIAL_STATE = 0;
 
     public TestBlocClassicTrigger() : base(INITIAL_STATE) { }
 
-    public override IEnumerable<int> MapEventToState(string @event) =>
-      throw new NotImplementedException();
-
     public void Trigger() => Trigger("action");
   }
 
-  public class TestErrorBloc : SyncBlocClassic<string, int> {
+  public class TestErrorBloc : SyncBlocClassic<ITestEvent, int> {
     public const int INITIAL_STATE = 0;
 
-    public TestErrorBloc() : base(INITIAL_STATE) { }
-
-    public override IEnumerable<int> MapEventToState(string @event)
-      => throw new InvalidOperationException();
+    public TestErrorBloc() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>((@e) => throw new InvalidOperationException());
+    }
   }
 
-  public class TestBloc : SyncBlocClassic<string, int> {
+  public class TestBloc : SyncBlocClassic<ITestEvent, int> {
     public const int INITIAL_STATE = 0;
 
-    public TestBloc() : base(INITIAL_STATE) { }
+    public TestBloc() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>(Increment);
+      On<ITestEvent.Decrement>(Decrement);
+    }
 
-    public override IEnumerable<int> MapEventToState(string @event) {
-      switch (@event) {
-        case "+":
-          yield return State + 1;
-          break;
-        case "-":
-          yield return State - 1;
-          break;
-        default:
-          yield return State;
-          break;
-      }
+    private IEnumerable<int> Increment(ITestEvent.Increment _) {
+      yield return State + 1;
+    }
+
+    private IEnumerable<int> Decrement(ITestEvent.Decrement _) {
+      yield return State - 1;
     }
   }
 }

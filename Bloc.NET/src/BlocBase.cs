@@ -88,8 +88,11 @@ public interface IBloc<TEvent, TState, TAction> : IDisposable {
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
 /// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class BlocBase<TEvent, TState, TAction>
-  : IBloc<TEvent, TState, TAction> where TState : IEquatable<TState> {
+public abstract class BlocBase<TEvent, TState, TAction> :
+  IBloc<TEvent, TState, TAction>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TAction : notnull {
   /// <inheritdoc/>
   public abstract TState State { get; }
 
