@@ -14,18 +14,30 @@ public partial class BlocGlueTests {
     public record StateB(string Value1, string Value2) : FakeBlocState;
   }
 
-  public class FakeBloc : SyncBloc<IFakeBlocEvent, FakeBlocState> {
-    public FakeBloc() : base(new FakeBlocState.StateA(1, 2)) { }
+  public interface IFakeBlocEffect {
+    public record struct EffectOne(int Value) : IFakeBlocEffect;
+    public record struct EffectTwo(string Value) : IFakeBlocEffect;
+  }
 
-    public override IEnumerable<FakeBlocState> MapEventToState(
-      IFakeBlocEvent @event
+  public class FakeBloc
+    : SyncBloc<IFakeBlocEvent, FakeBlocState, IFakeBlocEffect> {
+    public FakeBloc() : base(new FakeBlocState.StateA(1, 2)) {
+      On<IFakeBlocEvent.EventOne>(One);
+      On<IFakeBlocEvent.EventTwo>(Two);
+    }
+
+    private IEnumerable<FakeBlocState> One(
+      IFakeBlocEvent.EventOne @event
     ) {
-      if (@event is IFakeBlocEvent.EventOne one) {
-        yield return new FakeBlocState.StateA(one.Value1, one.Value2);
-      }
-      else if (@event is IFakeBlocEvent.EventTwo two) {
-        yield return new FakeBlocState.StateB(two.Value1, two.Value2);
-      }
+      Trigger(new IFakeBlocEffect.EffectOne(1));
+      yield return new FakeBlocState.StateA(@event.Value1, @event.Value2);
+    }
+
+    private IEnumerable<FakeBlocState> Two(
+      IFakeBlocEvent.EventTwo @event
+    ) {
+      Trigger(new IFakeBlocEffect.EffectTwo("2"));
+      yield return new FakeBlocState.StateB(@event.Value1, @event.Value2);
     }
   }
 }

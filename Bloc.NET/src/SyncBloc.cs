@@ -14,8 +14,12 @@ using System.Runtime.CompilerServices;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public abstract class SyncBloc<TEvent, TState> : GenericBloc<TEvent, TState>
-  where TState : IEquatable<TState> {
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class SyncBloc<TEvent, TState, TEffect> :
+  GenericBloc<TEvent, TState, TEffect>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>
@@ -23,20 +27,52 @@ public abstract class SyncBloc<TEvent, TState> : GenericBloc<TEvent, TState>
   public SyncBloc(TState initialState) : base(initialState) { }
 
   /// <summary>
-  /// Whenever a bloc processes an event, this method is called with the event
-  /// and expected to return the next state of the bloc. This method is used
-  /// to map an event to a new state based on the bloc's current state.
+  /// Registers an event handler for a specific event type. The event handler
+  /// is a function that receives an event of a specific type and emits one or
+  /// more states in response to the event.
   /// </summary>
-  /// <param name="event">The event to process.</param>
-  public abstract IEnumerable<TState> MapEventToState(TEvent @event);
-
-  /// <inheritdoc/>
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  protected override IObservable<TState> ConvertEvent(TEvent @event) =>
-    MapEventToState(@event).ToObservable();
+  /// <param name="handler">Event handler.</param>
+  /// <typeparam name="TEventType">Type of the event.</typeparam>
+  protected void On<TEventType>(Func<TEventType, IEnumerable<TState>> handler)
+    where TEventType : TEvent =>
+      On<TEventType>((@event) => handler(@event).ToObservable());
 
   /// <inheritdoc/>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   protected override bool ShouldThrow(Exception e) => true;
   // Sync blocs should always throw exceptions when adding an event.
+}
+
+/// <summary>
+/// <para>
+/// A bloc is a component that processes events and maintains a state. In
+/// game development, blocs can be used in place of traditional state machines,
+/// HSM's, or state charts. While blocs are not as rigorously defined as state
+/// machines, they are easy to test and offer increased flexibility (and often
+/// require less code).
+/// </para>
+/// <para>
+/// Unlike <see cref="SyncBloc{TEvent, TState, TEffect}" />, this bloc cannot
+/// trigger effects. The lack of effects replicates the API surface of the
+/// original bloc library for Flutter and is useful when you do not need blocs
+/// to trigger one-shot effects unrelated to state.
+/// </para>
+/// </summary>
+/// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
+/// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
+public abstract class SyncBlocClassic<TEvent, TState> :
+  SyncBloc<TEvent, TState, object>
+  where TEvent : notnull
+  where TState : IEquatable<TState> {
+  /// <summary>
+  /// Creates a new bloc with the given initial state.
+  /// </summary>
+  /// <param name="initialState">Initial state of the bloc.</param>
+  public SyncBlocClassic(TState initialState) : base(initialState) { }
+
+  /// <inheritdoc/>
+  protected override void Trigger(object effect) =>
+    throw new InvalidOperationException(
+      "This bloc does not support effects. Use a SyncBloc to trigger effects."
+    );
 }

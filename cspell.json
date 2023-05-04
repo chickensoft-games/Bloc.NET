@@ -51,6 +51,8 @@
     "reportgenerator",
     "reporttypes",
     "Shouldly",
+    "statechart",
+    "statecharts",
     "subfolders",
     "Substate",
     "targetargs",

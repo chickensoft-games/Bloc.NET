@@ -1,7 +1,6 @@
 namespace Bloc.NET;
 
 using System;
-using System.Collections.Generic;
 
 /// <summary>
 /// A bloc is a component that processes events and maintains a state. In
@@ -12,28 +11,34 @@ using System.Collections.Generic;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public interface IBloc<TEvent, TState> : IDisposable {
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public interface IBloc<TEvent, TState, TEffect> : IDisposable
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
   /// <summary>Current state of the bloc.</summary>
   TState State { get; }
 
-  /// <summary>
-  /// The asynchronous stream of states emitted by the bloc.
-  /// </summary>
-  IAsyncEnumerable<TState> Stream { get; }
+  /// <summary>Observable stream of events added to the bloc.</summary>
+  IObservable<TEvent> Events { get; }
 
   /// <summary>
-  /// <para>
-  /// Synchronous iterator of states emitted by the bloc that starts at the
-  /// current state. If there is no next state, trying to access the next state
-  /// will result in a hang. Instead, only call MoveNext if you are sure that
-  /// the bloc has emitted a new state.
-  /// </para>
-  /// <para>
-  /// In general, this will not be as useful as <see cref="Stream"/>. Prefer
-  /// <see cref="Stream"/> unless you have a specific reason to use this.
-  /// </para>
+  /// Observable stream of states emitted by the bloc that starts at the
+  /// current state. To convert this to a pull-based object, call
+  /// ToAsyncEnumerable or ToEnumerable on it.
   /// </summary>
-  IEnumerable<TState> States { get; }
+  IObservable<TState> States { get; }
+
+  /// <summary>Observable stream of effects triggered by the bloc.</summary>
+  IObservable<TEffect> Effects { get; }
+
+  /// <summary>Observable stream of errors occurring in the bloc.</summary>
+  IObservable<Exception> Errors { get; }
+
+  /// <summary>
+  /// Event invoked whenever an instance of a bloc event is added to the bloc.
+  /// </summary>
+  event EventHandler<TEvent> OnEvent;
 
   /// <summary>
   /// Event invoked when the bloc's state changes. Note that this event is
@@ -49,6 +54,11 @@ public interface IBloc<TEvent, TState> : IDisposable {
   /// <see cref="OnNextState"/>.
   /// </summary>
   event EventHandler<TState> OnState;
+
+  /// <summary>
+  /// Event invoked when an effect is triggered from the bloc.
+  /// </summary>
+  event EventHandler<TEffect> OnEffect;
 
   /// <summary>
   /// Event invoked when the bloc adds an error.
@@ -80,16 +90,29 @@ public interface IBloc<TEvent, TState> : IDisposable {
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public abstract class BlocBase<TEvent, TState> : IBloc<TEvent, TState>
-  where TState : IEquatable<TState> {
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class BlocBase<TEvent, TState, TEffect> :
+  IBloc<TEvent, TState, TEffect>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
   /// <inheritdoc/>
   public abstract TState State { get; }
 
   /// <inheritdoc/>
-  public abstract IAsyncEnumerable<TState> Stream { get; }
+  public abstract IObservable<TEvent> Events { get; }
 
   /// <inheritdoc/>
-  public abstract IEnumerable<TState> States { get; }
+  public abstract IObservable<TState> States { get; }
+
+  /// <inheritdoc/>
+  public abstract IObservable<TEffect> Effects { get; }
+
+  /// <inheritdoc/>
+  public abstract IObservable<Exception> Errors { get; }
+
+  /// <inheritdoc/>
+  public abstract event EventHandler<TEvent> OnEvent;
 
   /// <inheritdoc/>
   public abstract event EventHandler<TState> OnNextState;
@@ -97,6 +120,8 @@ public abstract class BlocBase<TEvent, TState> : IBloc<TEvent, TState>
   public abstract event EventHandler<TState> OnState;
   /// <inheritdoc/>
   public abstract event EventHandler<Exception> OnNextError;
+  /// <inheritdoc/>
+  public abstract event EventHandler<TEffect> OnEffect;
 
   /// <inheritdoc/>
   public abstract void Add(TEvent @event);
@@ -110,6 +135,14 @@ public abstract class BlocBase<TEvent, TState> : IBloc<TEvent, TState>
   /// </summary>
   /// <param name="e">The exception encountered.</param>
   protected abstract void OnError(Exception e);
+
+  /// <summary>
+  /// Triggers an effect. Blocs can call this method while handling events to
+  /// trigger a one-shot side-effect. An effect can be any type of object that
+  /// extends <typeparamref name="TEffect"/>.
+  /// </summary>
+  /// <param name="effect">Effect to trigger.</param>
+  protected abstract void Trigger(TEffect effect);
 
   /// <inheritdoc/>
   public abstract IDisposable Listen(

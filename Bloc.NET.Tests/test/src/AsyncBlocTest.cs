@@ -2,6 +2,7 @@ namespace Bloc.NET.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Shouldly;
@@ -36,42 +37,117 @@ public class AsyncBlocTest {
   }
 
   [Fact]
-  public void Enumerates() {
+  public async Task EnumeratesAsync() {
     using var bloc = new TestBloc();
-    var enumerator = bloc.States.GetEnumerator();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
 
-    enumerator.MoveNext();
+    await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE);
 
-    bloc.Add("+");
-    enumerator.MoveNext();
+    bloc.Add(new ITestEvent.Increment());
+    await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 1);
-    bloc.Add("+");
-    enumerator.MoveNext();
+    bloc.Add(new ITestEvent.Increment());
+    await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 2);
-
-    bloc.Add("+");
-    enumerator.MoveNext();
+    bloc.Add(new ITestEvent.Increment());
+    await enumerator.MoveNextAsync();
     enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 3);
   }
 
   [Fact]
-  public async Task EnumeratesAsync() {
+  public async Task UpdatesEventObservers() {
     using var bloc = new TestBloc();
-    var enumerator = bloc.Stream.GetAsyncEnumerator();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var @event = new ITestEvent.Increment();
+    var streamWasCalled = false;
+    using var subscription = bloc.Events.Subscribe(
+      onNext: (@e) => {
+        @e.ShouldBe(@event);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var eventHandler = new EventHandler<ITestEvent>((b, e) => {
+      b.ShouldBe(bloc);
+      e.ShouldBe(@event);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnEvent += eventHandler;
+
+    bloc.Add(@event);
 
     await enumerator.MoveNextAsync();
-    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE);
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
 
-    bloc.Add("+");
+    bloc.OnEvent -= eventHandler;
+  }
+
+  [Fact]
+  public async Task UpdatesErrorObservers() {
+    using var bloc = new TestErrorBloc();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var streamWasCalled = false;
+    using var subscription = bloc.Errors.Subscribe(
+      onNext: (@e) => {
+        @e.ShouldBe(TestErrorBloc.Error);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var errorHandler = new EventHandler<Exception>((b, e) => {
+      b.ShouldBe(bloc);
+      e.ShouldBe(TestErrorBloc.Error);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnNextError += errorHandler;
+
+    bloc.Add(new ITestEvent.Increment());
+
     await enumerator.MoveNextAsync();
-    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 1);
-    bloc.Add("+");
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
+
+    bloc.OnNextError -= errorHandler;
+  }
+
+  [Fact]
+  public async Task UpdatesEffectObservers() {
+    using var bloc = new TestBlocWithEffects();
+    var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
+
+    var streamWasCalled = false;
+    var expectedEffect = 1;
+    using var subscription = bloc.Effects.Subscribe(
+      onNext: (effect) => {
+        effect.ShouldBe(expectedEffect);
+        streamWasCalled = true;
+      }
+    );
+
+    var handlerWasCalled = false;
+    var effectHandler = new EventHandler<int>((b, effect) => {
+      b.ShouldBe(bloc);
+      effect.ShouldBe(expectedEffect);
+      handlerWasCalled = true;
+    });
+
+    bloc.OnEffect += effectHandler;
+
+    bloc.Add(new ITestEvent.Increment());
+
     await enumerator.MoveNextAsync();
-    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 2);
-    bloc.Add("+");
-    await enumerator.MoveNextAsync();
-    enumerator.Current.ShouldBe(TestBloc.INITIAL_STATE + 3);
+    streamWasCalled.ShouldBeTrue();
+    handlerWasCalled.ShouldBeTrue();
+
+    bloc.OnEffect -= effectHandler;
   }
 
   [Fact]
@@ -81,11 +157,11 @@ public class AsyncBlocTest {
     void onNextState(object? bloc, int s) => onNextStateCalled++;
     bloc.OnNextState += onNextState;
 
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onNextStateCalled.ShouldBe(1);
 
     bloc.OnNextState -= onNextState;
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onNextStateCalled.ShouldBe(1);
   }
 
@@ -96,11 +172,11 @@ public class AsyncBlocTest {
     void onState(object? bloc, int s) => onStateCalled++;
     bloc.OnState += onState;
 
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onStateCalled.ShouldBe(2);
 
     bloc.OnState -= onState;
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onStateCalled.ShouldBe(2);
   }
 
@@ -111,21 +187,12 @@ public class AsyncBlocTest {
     void onNextError(object? bloc, Exception e) => onNextErrorCalled++;
     bloc.OnNextError += onNextError;
 
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onNextErrorCalled.ShouldBe(1);
 
     bloc.OnNextError -= onNextError;
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     onNextErrorCalled.ShouldBe(1);
-  }
-
-  [Fact]
-  public void EventsAreMappedToState() {
-    using var bloc = new TestBloc();
-    bloc.Add("+");
-    bloc.State.ShouldBe(TestBloc.INITIAL_STATE + 1);
-    bloc.Add("-");
-    bloc.State.ShouldBe(TestBloc.INITIAL_STATE);
   }
 
   [Fact]
@@ -133,7 +200,7 @@ public class AsyncBlocTest {
     using var bloc = new TestBloc();
     var state = TestBloc.INITIAL_STATE;
     using var subscription = bloc.Listen(s => state = s);
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     state.ShouldBe(TestBloc.INITIAL_STATE + 1);
   }
 
@@ -147,7 +214,7 @@ public class AsyncBlocTest {
       onError: (_) => onErrorCalled = true
     );
 
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
 
     onErrorCalled.ShouldBeTrue();
   }
@@ -158,7 +225,7 @@ public class AsyncBlocTest {
     var state = TestErrorBloc.INITIAL_STATE;
     using var subscription = bloc.Listen(s => state = s);
 
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
 
     // Events that cause errors to be thrown in OnEvent should not affect
     // state.
@@ -166,7 +233,7 @@ public class AsyncBlocTest {
   }
 
   [Fact]
-  public void AddsError() {
+  public Task AddsError() {
     using var bloc = new TestError2Bloc();
 
     var states = new List<int>();
@@ -178,10 +245,11 @@ public class AsyncBlocTest {
       errorEventCalled = true;
     };
 
-    bloc.Add("event");
+    bloc.Add(new ITestEvent.Increment());
 
     states.ShouldBe(new[] { TestError2Bloc.INITIAL_STATE, 1, 2, 3 });
     errorEventCalled.ShouldBeTrue();
+    return Task.CompletedTask;
   }
 
   [Fact]
@@ -191,7 +259,7 @@ public class AsyncBlocTest {
     using var subscription = bloc.Listen(
       _ => { }, onCompleted: () => onCompletedCalled = true
     );
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     bloc.Dispose();
     onCompletedCalled.ShouldBeTrue();
   }
@@ -200,7 +268,7 @@ public class AsyncBlocTest {
   public void ListenHandlesCompletionWithDefaultHandler() {
     var bloc = new TestBloc();
     using var subscription = bloc.Listen(_ => { });
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     bloc.Dispose();
   }
 
@@ -211,9 +279,29 @@ public class AsyncBlocTest {
     var cancellation = new CancellationTokenSource();
     using var subscription = bloc.Listen(_ => { });
     cancellation.Token.Register(() => onCanceledCalled = true);
-    bloc.Add("+");
+    bloc.Add(new ITestEvent.Increment());
     cancellation.Cancel();
     onCanceledCalled.ShouldBeTrue();
+  }
+
+  [Fact]
+  public void BlocClassicCannotTriggerEffect() {
+    using var bloc = new TestBlocClassicTrigger();
+    Should.Throw<InvalidOperationException>(() => bloc.Trigger());
+  }
+
+  [Fact]
+  public void CannotRegisterMoreThanOneEventHandlerPerType() =>
+    Should.Throw<InvalidOperationException>(() => {
+      using var bloc = new TestBlocDuplicateRegistrations();
+    });
+
+  [Fact]
+  public void ThrowsExceptionWhenNoEventHandlerRegistered() {
+    using var bloc = new TestErrorBloc();
+    Should.Throw<InvalidOperationException>(
+      () => bloc.Add(new ITestEvent.Decrement())
+    );
   }
 
   public static class Utils {
@@ -226,21 +314,29 @@ public class AsyncBlocTest {
 
   public static WeakReference CreateWeakReference() => new(new TestBloc());
 
-  public class TestErrorBloc : AsyncBloc<string, int> {
-    public const int INITIAL_STATE = 0;
-
-    public TestErrorBloc() : base(INITIAL_STATE) { }
-
-    public override IAsyncEnumerable<int> MapEventToState(string @event)
-      => throw new InvalidOperationException();
+  public interface ITestEvent {
+    public struct Increment : ITestEvent { }
+    public struct Decrement : ITestEvent { }
   }
 
-  public class TestError2Bloc : AsyncBloc<string, int> {
+  public class TestErrorBloc : Bloc<ITestEvent, int> {
     public const int INITIAL_STATE = 0;
 
-    public TestError2Bloc() : base(INITIAL_STATE) { }
+    public static Exception Error { get; } = new InvalidOperationException();
 
-    public override async IAsyncEnumerable<int> MapEventToState(string @event) {
+    public TestErrorBloc() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>((_) => throw Error);
+    }
+  }
+
+  public class TestError2Bloc : Bloc<ITestEvent, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestError2Bloc() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>(Increment);
+    }
+
+    private async IAsyncEnumerable<int> Increment(ITestEvent.Increment _) {
       yield return 1;
       AddError(new InvalidOperationException());
       yield return 2;
@@ -249,23 +345,23 @@ public class AsyncBlocTest {
     }
   }
 
-  public class TestBloc : AsyncBloc<string, int> {
+  public class TestBloc : Bloc<ITestEvent, int> {
     public const int INITIAL_STATE = 0;
 
-    public TestBloc() : base(INITIAL_STATE) { }
+    public TestBloc() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>(Increment);
+      On<ITestEvent.Decrement>(Decrement);
+    }
 
-    public override async IAsyncEnumerable<int> MapEventToState(string @event) {
-      switch (@event) {
-        case "+":
-          yield return State + 1;
-          break;
-        case "-":
-          yield return State - 1;
-          break;
-        default:
-          yield return State;
-          break;
-      }
+    private async IAsyncEnumerable<int> Increment(ITestEvent.Increment _) {
+      var state = State + 1;
+      yield return state;
+      await Task.CompletedTask;
+    }
+
+    private async IAsyncEnumerable<int> Decrement(ITestEvent.Decrement _) {
+      var state = State - 1;
+      yield return state;
       await Task.CompletedTask;
     }
 
@@ -274,9 +370,43 @@ public class AsyncBlocTest {
     }
   }
 
-  public class MyObject {
-    ~MyObject() {
-      WasBlocClosed = true;
+  public class TestBlocWithEffects : AsyncBloc<ITestEvent, int, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestBlocWithEffects() : base(INITIAL_STATE) {
+      On<ITestEvent.Increment>(Increment);
+      On<ITestEvent.Decrement>(Decrement);
+    }
+
+    private async IAsyncEnumerable<int> Increment(ITestEvent.Increment inc) {
+      var state = State + 1;
+      Trigger(state);
+      yield return state;
+      await Task.CompletedTask;
+    }
+
+    private async IAsyncEnumerable<int> Decrement(ITestEvent.Decrement _) {
+      var state = State - 1;
+      Trigger(state);
+      yield return state;
+      await Task.CompletedTask;
+    }
+  }
+
+  public class TestBlocClassicTrigger : Bloc<string, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestBlocClassicTrigger() : base(INITIAL_STATE) { }
+
+    public void Trigger() => Trigger("effect");
+  }
+
+  public class TestBlocDuplicateRegistrations : Bloc<string, int> {
+    public const int INITIAL_STATE = 0;
+
+    public TestBlocDuplicateRegistrations() : base(INITIAL_STATE) {
+      On<string>((_) => AsyncEnumerable.Empty<int>());
+      On<string>((_) => AsyncEnumerable.Empty<int>());
     }
   }
 }

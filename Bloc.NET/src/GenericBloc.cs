@@ -18,29 +18,55 @@ using WeakEvent;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
-  where TState : IEquatable<TState> {
-  private readonly ISubject<TEvent> _eventController
-    = new Subject<TEvent>();
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class GenericBloc<TEvent, TState, TEffect> :
+  BlocBase<TEvent, TState, TEffect>
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
+  private readonly ISubject<TEvent> _eventController = new Subject<TEvent>();
   private readonly BehaviorSubject<TState> _stateController;
   private readonly ISubject<Exception> _errorController
     = new Subject<Exception>();
   private readonly CancellationTokenSource _eventSubscription;
+  private readonly WeakEventSource<TEvent> _eventEventSource = new();
   private readonly WeakEventSource<TState> _stateEventSource = new();
   private readonly WeakEventSource<Exception> _errorEventSource = new();
   private readonly IDisposable _stateSubscription;
   private readonly IDisposable _errorSubscription;
-  private bool _isDisposed;
+  private readonly ISubject<TEffect> _effectController = new Subject<TEffect>();
+  private readonly WeakEventSource<TEffect> _effectEventSource = new();
+  private readonly IDisposable _effectSubscription;
+  private readonly Dictionary<Type, Func<dynamic, IObservable<TState>>>
+    _handlers = new();
 
   /// <inheritdoc/>
   public override TState State => _stateController.Value;
 
   /// <inheritdoc/>
-  public override IAsyncEnumerable<TState> Stream
-    => _stateController.ToAsyncEnumerable();
+  public override IObservable<TEvent> Events => _eventController.AsObservable();
 
   /// <inheritdoc/>
-  public override IEnumerable<TState> States => _stateController.ToEnumerable();
+  public override IObservable<TState> States => _stateController.AsObservable();
+
+  /// <inheritdoc/>
+  public override IObservable<TEffect> Effects =>
+    _effectController.AsObservable();
+
+  /// <inheritdoc/>
+  public override IObservable<Exception> Errors =>
+    _errorController.AsObservable();
+
+  /// <summary>
+  /// Whether or not the bloc has been disposed.
+  /// </summary>
+  public bool IsDisposed { get; private set; }
+
+  /// <inheritdoc/>
+  public override event EventHandler<TEvent> OnEvent {
+    add => _eventEventSource.Subscribe(value);
+    remove => _eventEventSource.Unsubscribe(value);
+  }
 
   /// <inheritdoc/>
   public override event EventHandler<TState> OnNextState {
@@ -64,6 +90,12 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
     remove => _errorEventSource.Unsubscribe(value);
   }
 
+  /// <inheritdoc/>
+  public override event EventHandler<TEffect> OnEffect {
+    add => _effectEventSource.Subscribe(value);
+    remove => _effectEventSource.Unsubscribe(value);
+  }
+
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>
@@ -74,8 +106,10 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
 
     _eventController
       .SelectMany((@event) => {
+        _eventEventSource.Raise(this, @event);
+
         try {
-          return ConvertEvent(@event);
+          return _handlers[@event.GetType()](@event);
         }
         catch (Exception e) {
           _errorController.OnNext(e);
@@ -97,14 +131,12 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
 
     _errorSubscription = _errorController.Subscribe(onNext: AddError);
 
+    _effectSubscription = _effectController.Subscribe(
+      onNext: (a) => _effectEventSource.Raise(this, a)
+    );
+
     _stateController.OnNext(initialState);
   }
-
-  /// <summary>
-  /// Converts an event into an observable stream of states.
-  /// </summary>
-  /// <param name="event">Event to process.</param>
-  protected abstract IObservable<TState> ConvertEvent(TEvent @event);
 
   /// <summary>
   /// Gives bloc implementations a chance to determine if an exception should
@@ -115,8 +147,37 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
   /// as an error to the bloc error stream.</returns>
   protected abstract bool ShouldThrow(Exception e);
 
+  /// <summary>
+  /// Registers an event handler for a specific event type. The event handler
+  /// is a function that receives an event of a specific type and emits one or
+  /// more states in response to the event.
+  /// </summary>
+  /// <param name="handler">Event handler.</param>
+  /// <typeparam name="TEventType">Type of the event.</typeparam>
+  /// <exception cref="InvalidOperationException"></exception>
+  protected void On<TEventType>(
+    Func<TEventType, IObservable<TState>> handler
+  ) where TEventType : TEvent {
+    var type = typeof(TEventType);
+    if (_handlers.ContainsKey(type)) {
+      throw new InvalidOperationException(
+        "Another handler was already registered for the event type " +
+        type.FullName + "."
+      );
+    }
+    _handlers.Add(typeof(TEventType), (e) => handler((TEventType)e));
+  }
+
   /// <inheritdoc/>
-  public override void Add(TEvent @event) => _eventController.OnNext(@event);
+  public override void Add(TEvent @event) {
+    var type = @event.GetType();
+    if (!_handlers.ContainsKey(type)) {
+      throw new InvalidOperationException(
+        $"No handler registered for the event type {type.FullName}."
+      );
+    }
+    _eventController.OnNext(@event);
+  }
 
   /// <inheritdoc/>
   protected override void AddError(Exception e) {
@@ -144,6 +205,10 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
   protected override void OnError(Exception e) { }
 
   /// <inheritdoc/>
+  protected override void Trigger(TEffect effect) =>
+    _effectController.OnNext(effect);
+
+  /// <inheritdoc/>
   public override void Dispose() {
     Dispose(true);
     // GC doesn't need to call our finalizer since we've already cleaned
@@ -151,22 +216,33 @@ public abstract class GenericBloc<TEvent, TState> : BlocBase<TEvent, TState>
     GC.SuppressFinalize(this);
   }
 
-  private void Dispose(bool disposing) {
-    if (_isDisposed) { return; }
+  /// <summary>
+  /// Cleans up the bloc's subscriptions and event streams.
+  /// </summary>
+  /// <param name="disposing">True if this method was invoked from the public
+  /// <see cref="Dispose()" /> method, or false if it was invoked from the
+  /// finalizer.</param>
+  protected virtual void Dispose(bool disposing) {
+    if (IsDisposed) { return; }
 
-    _eventController.OnCompleted();
-    _stateController.OnCompleted();
-    _errorController.OnCompleted();
+    if (disposing) {
+      _eventController.OnCompleted();
+      _stateController.OnCompleted();
+      _errorController.OnCompleted();
 
-    // Unsubscribe from events.
-    _eventSubscription.Cancel();
-    _eventSubscription.Dispose();
+      // Unsubscribe from events.
+      _eventSubscription.Cancel();
+      _eventSubscription.Dispose();
 
-    // Unsubscribe from state changes.
-    _stateSubscription.Dispose();
-    _errorSubscription.Dispose();
+      // Unsubscribe from state changes.
+      _stateSubscription.Dispose();
+      _errorSubscription.Dispose();
 
-    _isDisposed = true;
+      // Unsubscribe from effect announcements.
+      _effectSubscription.Dispose();
+    }
+
+    IsDisposed = true;
   }
 
   /// <summary>
