@@ -51,7 +51,7 @@ public class SyncBlocTest {
   }
 
   [Fact]
-  public void SyncBlocClassicCannotTriggerAction() {
+  public void SyncBlocClassicCannotTriggerEffect() {
     using var bloc = new TestBlocClassicTrigger();
     Should.Throw<InvalidOperationException>(() => bloc.Trigger());
   }
@@ -67,7 +67,7 @@ public class SyncBlocTest {
 
     public TestBlocClassicTrigger() : base(INITIAL_STATE) { }
 
-    public void Trigger() => Trigger("action");
+    public void Trigger() => Trigger("effect");
   }
 
   public class TestErrorBloc : SyncBlocClassic<ITestEvent, int> {

@@ -18,12 +18,12 @@ using WeakEvent;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-/// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class GenericBloc<TEvent, TState, TAction> :
-  BlocBase<TEvent, TState, TAction>
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class GenericBloc<TEvent, TState, TEffect> :
+  BlocBase<TEvent, TState, TEffect>
   where TEvent : notnull
   where TState : IEquatable<TState>
-  where TAction : notnull {
+  where TEffect : notnull {
   private readonly ISubject<TEvent> _eventController = new Subject<TEvent>();
   private readonly BehaviorSubject<TState> _stateController;
   private readonly ISubject<Exception> _errorController
@@ -34,9 +34,9 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
   private readonly WeakEventSource<Exception> _errorEventSource = new();
   private readonly IDisposable _stateSubscription;
   private readonly IDisposable _errorSubscription;
-  private readonly ISubject<TAction> _actionController = new Subject<TAction>();
-  private readonly WeakEventSource<TAction> _actionEventSource = new();
-  private readonly IDisposable _actionSubscription;
+  private readonly ISubject<TEffect> _effectController = new Subject<TEffect>();
+  private readonly WeakEventSource<TEffect> _effectEventSource = new();
+  private readonly IDisposable _effectSubscription;
   private readonly Dictionary<Type, Func<dynamic, IObservable<TState>>>
     _handlers = new();
 
@@ -50,8 +50,8 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
   public override IObservable<TState> States => _stateController.AsObservable();
 
   /// <inheritdoc/>
-  public override IObservable<TAction> Actions =>
-    _actionController.AsObservable();
+  public override IObservable<TEffect> Effects =>
+    _effectController.AsObservable();
 
   /// <inheritdoc/>
   public override IObservable<Exception> Errors =>
@@ -91,9 +91,9 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
   }
 
   /// <inheritdoc/>
-  public override event EventHandler<TAction> OnAction {
-    add => _actionEventSource.Subscribe(value);
-    remove => _actionEventSource.Unsubscribe(value);
+  public override event EventHandler<TEffect> OnEffect {
+    add => _effectEventSource.Subscribe(value);
+    remove => _effectEventSource.Unsubscribe(value);
   }
 
   /// <summary>
@@ -131,8 +131,8 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
 
     _errorSubscription = _errorController.Subscribe(onNext: AddError);
 
-    _actionSubscription = _actionController.Subscribe(
-      onNext: (a) => _actionEventSource.Raise(this, a)
+    _effectSubscription = _effectController.Subscribe(
+      onNext: (a) => _effectEventSource.Raise(this, a)
     );
 
     _stateController.OnNext(initialState);
@@ -205,8 +205,8 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
   protected override void OnError(Exception e) { }
 
   /// <inheritdoc/>
-  protected override void Trigger(TAction action) =>
-    _actionController.OnNext(action);
+  protected override void Trigger(TEffect effect) =>
+    _effectController.OnNext(effect);
 
   /// <inheritdoc/>
   public override void Dispose() {
@@ -238,8 +238,8 @@ public abstract class GenericBloc<TEvent, TState, TAction> :
       _stateSubscription.Dispose();
       _errorSubscription.Dispose();
 
-      // Unsubscribe from action announcements.
-      _actionSubscription.Dispose();
+      // Unsubscribe from effect announcements.
+      _effectSubscription.Dispose();
     }
 
     IsDisposed = true;

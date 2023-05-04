@@ -15,12 +15,12 @@ using System.Runtime.CompilerServices;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-/// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class AsyncBloc<TEvent, TState, TAction> :
-  GenericBloc<TEvent, TState, TAction>
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class AsyncBloc<TEvent, TState, TEffect> :
+  GenericBloc<TEvent, TState, TEffect>
   where TEvent : notnull
   where TState : IEquatable<TState>
-  where TAction : notnull {
+  where TEffect : notnull {
   /// <summary>
   /// Creates a new bloc with the given initial state.
   /// </summary>
@@ -56,10 +56,10 @@ public abstract class AsyncBloc<TEvent, TState, TAction> :
 /// require less code).
 /// </para>
 /// <para>
-/// Unlike <see cref="AsyncBloc{TEvent, TState, TAction}"/>, this bloc cannot
-/// trigger actions. The lack of actions replicates the API surface of the
+/// Unlike <see cref="AsyncBloc{TEvent, TState, TEffect}"/>, this bloc cannot
+/// trigger effects. The lack of effects replicates the API surface of the
 /// original bloc library for Flutter and is useful when you do not need blocs
-/// to trigger one-shot actions unrelated to state.
+/// to trigger one-shot effects unrelated to state.
 /// </para>
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
@@ -76,6 +76,6 @@ public abstract class Bloc<TEvent, TState> : AsyncBloc<TEvent, TState, object>
   /// <inheritdoc/>
   protected override void Trigger(object action) =>
     throw new InvalidOperationException(
-      "This bloc does not support actions. Use an AsyncBloc to trigger actions."
+      "This bloc does not support effects. Use an AsyncBloc to trigger effects."
     );
 }

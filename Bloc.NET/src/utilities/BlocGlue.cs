@@ -15,47 +15,53 @@ public static class BlocGlueExtensions {
   /// <param name="bloc">The bloc to glue.</param>
   /// <typeparam name="TEvent">Type of the bloc's events.</typeparam>
   /// <typeparam name="TState">Type of the bloc's state.</typeparam>
-  /// <typeparam name="TAction">Type of the bloc's actions.</typeparam>
-  /// <returns>A new <see cref="BlocGlue{TEvent, TState, TAction}" /></returns>
-  public static BlocGlue<TEvent, TState, TAction> Glue<TEvent, TState, TAction>(
-    this IBloc<TEvent, TState, TAction> bloc
-  ) where TState : notnull => new(bloc);
+  /// <typeparam name="TEffect">Type of the bloc's effects.</typeparam>
+  /// <returns>A new <see cref="BlocGlue{TEvent, TState, TEffect}" /></returns>
+  public static BlocGlue<TEvent, TState, TEffect> Glue<TEvent, TState, TEffect>(
+    this IBloc<TEvent, TState, TEffect> bloc
+  ) where TEvent : notnull
+    where TState : IEquatable<TState>
+    where TEffect : notnull => new(bloc);
 }
 
 /// <summary>
 /// Glue for a bloc. Glue allows you to select data from a bloc state and
 /// perform an action whenever it changes. Using glue enables you to write
-/// more declarative code and prevent unnecessary actions when a state is
+/// more declarative code and prevent unnecessary updates when a state is
 /// changed but the relevant data within it has not.
 /// </summary>
 /// <typeparam name="TEvent">Type of the bloc's events.</typeparam>
 /// <typeparam name="TState">Type of the bloc's state.</typeparam>
-/// <typeparam name="TAction">Type of the bloc's actions.</typeparam>
-public class BlocGlue<TEvent, TState, TAction>
-  : IDisposable where TState : notnull {
+/// <typeparam name="TEffect">Type of the bloc's effects.</typeparam>
+public sealed class BlocGlue<TEvent, TState, TEffect>
+  : IDisposable where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
   /// <summary>
   /// Bloc that is glued.
   /// </summary>
-  public IBloc<TEvent, TState, TAction> Bloc { get; }
+  public IBloc<TEvent, TState, TEffect> Bloc { get; }
 
   private TState _previousState;
 
   private readonly Dictionary<Type, List<IBlocStateGlue>> _stateGlues = new();
   private readonly Dictionary<Type, List<Action<TState, dynamic>>> _invokers =
     new();
+  private readonly Dictionary<Type, Action<TEffect>> _effectHandlers = new();
 
-  internal BlocGlue(IBloc<TEvent, TState, TAction> bloc) {
+  internal BlocGlue(IBloc<TEvent, TState, TEffect> bloc) {
     Bloc = bloc;
     _previousState = bloc.State;
     Bloc.OnNextState += OnNextState;
+    Bloc.OnEffect += OnEffect;
   }
 
   /// <summary>
-  /// Register glue actions for a specific type of state.
+  /// Register bindings for a specific type of state.
   /// </summary>
-  /// <typeparam name="TSubstate">The type of state to glue.</typeparam>
+  /// <typeparam name="TSubstate">The type of state to glue to.</typeparam>
   /// <returns>A <see cref="BlocStateGlueInvoker{TSubstate}" /> that allows
-  /// actions to be registered for selected data within the state.</returns>
+  /// bindings to be registered for selected data within the state.</returns>
   public BlocStateGlue<TSubstate> When<TSubstate>()
     where TSubstate : TState {
     var type = typeof(TSubstate);
@@ -72,6 +78,21 @@ public class BlocGlue<TEvent, TState, TAction>
     return new BlocStateGlue<TSubstate>(stateGlue);
   }
 
+  /// <summary>
+  /// Registers a side-effect handler for the bloc.
+  /// </summary>
+  /// <typeparam name="TEffectType">The type of side effect to handle.
+  /// </typeparam>
+  /// <param name="handler">Action which handles an instance of the effect.
+  /// </param>
+  public BlocGlue<TEvent, TState, TEffect> Handle<TEffectType>(
+    Action<TEffectType> handler
+  ) where TEffectType : TEffect {
+    var type = typeof(TEffectType);
+    _effectHandlers[type] = (TEffect effect) => handler((TEffectType)effect!);
+    return this;
+  }
+
   private void Cleanup() {
     foreach (var stateGlueList in _stateGlues.Values) {
       foreach (var stateGlue in stateGlueList) {
@@ -79,6 +100,8 @@ public class BlocGlue<TEvent, TState, TAction>
       }
     }
     _stateGlues.Clear();
+    _invokers.Clear();
+    _effectHandlers.Clear();
   }
 
   private void OnNextState(object? _, TState state) {
@@ -93,13 +116,30 @@ public class BlocGlue<TEvent, TState, TAction>
     _previousState = state;
   }
 
+  private void OnEffect(object? _, TEffect effect) {
+    var type = effect.GetType();
+    if (_effectHandlers.TryGetValue(type, out var handler)) {
+      handler(effect);
+    }
+  }
+
   /// <summary>
-  /// Clean up registered glue actions for all states and stop listening
+  /// Clean up registered glue bindings for all states and stop listening
   /// for state changes.
   /// </summary>
-  public void Dispose() {
-    Bloc.OnNextState -= OnNextState;
-    Cleanup();
+  public void Dispose() => Dispose(true);
+
+  private void Dispose(bool disposing) {
+    if (disposing) {
+      Bloc.OnEffect -= OnEffect;
+      Bloc.OnNextState -= OnNextState;
+      Cleanup();
+    }
+  }
+
+  /// <summary>Glue finalizer.</summary>
+  ~BlocGlue() {
+    Dispose(false);
   }
 
   /// <summary>
@@ -107,8 +147,8 @@ public class BlocGlue<TEvent, TState, TAction>
   /// </summary>
   internal interface IBlocStateGlue {
     /// <summary>
-    /// Invoke all registered glue actions for a specific type of state. Used
-    /// by <see cref="BlocGlue{TEvent, TState, TAction}" />.
+    /// Invoke all registered glue bindings for a specific type of state. Used
+    /// by <see cref="BlocGlue{TEvent, TState, TEffect}" />.
     /// </summary>
     /// <param name="state">Current state of the bloc.</param>
     /// <param name="previous">Previous state of the bloc.</param>
@@ -118,19 +158,19 @@ public class BlocGlue<TEvent, TState, TAction>
       where TOtherSubstate : TState;
 
     /// <summary>
-    /// Clean up registered glue actions for a specific type of state.
+    /// Clean up registered glue bindings for a specific type of state.
     /// </summary>
     void Cleanup();
   }
 
   internal class BlocStateGlueInvoker<TSubstate> : IBlocStateGlue
     where TSubstate : TState {
-    private readonly List<Action<dynamic, TState>> _actions = new();
+    private readonly List<Action<dynamic, TState>> _bindings = new();
 
     /// <inheritdoc />
     public void Invoke<TOtherSubstate>(TOtherSubstate state, TState previous)
       where TOtherSubstate : TState {
-      foreach (var action in _actions) {
+      foreach (var action in _bindings) {
         action(state, previous);
       }
     }
@@ -155,13 +195,13 @@ public class BlocGlue<TEvent, TState, TAction>
         to(selectedData);
       };
 
-      _actions.Add(handler);
+      _bindings.Add(handler);
 
       return this;
     }
 
     /// <inheritdoc />
-    public void Cleanup() => _actions.Clear();
+    public void Cleanup() => _bindings.Clear();
   }
 
   /// <summary>

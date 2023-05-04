@@ -11,8 +11,11 @@ using System;
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-/// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public interface IBloc<TEvent, TState, TAction> : IDisposable {
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public interface IBloc<TEvent, TState, TEffect> : IDisposable
+  where TEvent : notnull
+  where TState : IEquatable<TState>
+  where TEffect : notnull {
   /// <summary>Current state of the bloc.</summary>
   TState State { get; }
 
@@ -26,8 +29,8 @@ public interface IBloc<TEvent, TState, TAction> : IDisposable {
   /// </summary>
   IObservable<TState> States { get; }
 
-  /// <summary>Observable stream of actions triggered by the bloc.</summary>
-  IObservable<TAction> Actions { get; }
+  /// <summary>Observable stream of effects triggered by the bloc.</summary>
+  IObservable<TEffect> Effects { get; }
 
   /// <summary>Observable stream of errors occurring in the bloc.</summary>
   IObservable<Exception> Errors { get; }
@@ -53,9 +56,9 @@ public interface IBloc<TEvent, TState, TAction> : IDisposable {
   event EventHandler<TState> OnState;
 
   /// <summary>
-  /// Event invoked when an action is triggered from the bloc.
+  /// Event invoked when an effect is triggered from the bloc.
   /// </summary>
-  event EventHandler<TAction> OnAction;
+  event EventHandler<TEffect> OnEffect;
 
   /// <summary>
   /// Event invoked when the bloc adds an error.
@@ -87,12 +90,12 @@ public interface IBloc<TEvent, TState, TAction> : IDisposable {
 /// </summary>
 /// <typeparam name="TEvent">Type of events that the bloc receives.</typeparam>
 /// <typeparam name="TState">Type of state that bloc maintains.</typeparam>
-/// <typeparam name="TAction">Type of actions the bloc can trigger.</typeparam>
-public abstract class BlocBase<TEvent, TState, TAction> :
-  IBloc<TEvent, TState, TAction>
+/// <typeparam name="TEffect">Type of effects the bloc can trigger.</typeparam>
+public abstract class BlocBase<TEvent, TState, TEffect> :
+  IBloc<TEvent, TState, TEffect>
   where TEvent : notnull
   where TState : IEquatable<TState>
-  where TAction : notnull {
+  where TEffect : notnull {
   /// <inheritdoc/>
   public abstract TState State { get; }
 
@@ -103,7 +106,7 @@ public abstract class BlocBase<TEvent, TState, TAction> :
   public abstract IObservable<TState> States { get; }
 
   /// <inheritdoc/>
-  public abstract IObservable<TAction> Actions { get; }
+  public abstract IObservable<TEffect> Effects { get; }
 
   /// <inheritdoc/>
   public abstract IObservable<Exception> Errors { get; }
@@ -118,7 +121,7 @@ public abstract class BlocBase<TEvent, TState, TAction> :
   /// <inheritdoc/>
   public abstract event EventHandler<Exception> OnNextError;
   /// <inheritdoc/>
-  public abstract event EventHandler<TAction> OnAction;
+  public abstract event EventHandler<TEffect> OnEffect;
 
   /// <inheritdoc/>
   public abstract void Add(TEvent @event);
@@ -134,12 +137,12 @@ public abstract class BlocBase<TEvent, TState, TAction> :
   protected abstract void OnError(Exception e);
 
   /// <summary>
-  /// Triggers an action. Blocs can call this method while handling events to
-  /// trigger a one-shot action. An action can be any type of object that
-  /// extends <typeparamref name="TAction"/>.
+  /// Triggers an effect. Blocs can call this method while handling events to
+  /// trigger a one-shot side-effect. An effect can be any type of object that
+  /// extends <typeparamref name="TEffect"/>.
   /// </summary>
-  /// <param name="action">Action to trigger.</param>
-  protected abstract void Trigger(TAction action);
+  /// <param name="effect">Effect to trigger.</param>
+  protected abstract void Trigger(TEffect effect);
 
   /// <inheritdoc/>
   public abstract IDisposable Listen(

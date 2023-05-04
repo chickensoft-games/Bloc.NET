@@ -119,27 +119,27 @@ public class AsyncBlocTest {
   }
 
   [Fact]
-  public async Task UpdatesActionObservers() {
-    using var bloc = new TestBlocWithActions();
+  public async Task UpdatesEffectObservers() {
+    using var bloc = new TestBlocWithEffects();
     var enumerator = bloc.States.ToAsyncEnumerable().GetAsyncEnumerator();
 
     var streamWasCalled = false;
-    var expectedAction = 1;
-    using var subscription = bloc.Actions.Subscribe(
-      onNext: (action) => {
-        action.ShouldBe(expectedAction);
+    var expectedEffect = 1;
+    using var subscription = bloc.Effects.Subscribe(
+      onNext: (effect) => {
+        effect.ShouldBe(expectedEffect);
         streamWasCalled = true;
       }
     );
 
     var handlerWasCalled = false;
-    var actionHandler = new EventHandler<int>((b, action) => {
+    var effectHandler = new EventHandler<int>((b, effect) => {
       b.ShouldBe(bloc);
-      action.ShouldBe(expectedAction);
+      effect.ShouldBe(expectedEffect);
       handlerWasCalled = true;
     });
 
-    bloc.OnAction += actionHandler;
+    bloc.OnEffect += effectHandler;
 
     bloc.Add(new ITestEvent.Increment());
 
@@ -147,7 +147,7 @@ public class AsyncBlocTest {
     streamWasCalled.ShouldBeTrue();
     handlerWasCalled.ShouldBeTrue();
 
-    bloc.OnAction -= actionHandler;
+    bloc.OnEffect -= effectHandler;
   }
 
   [Fact]
@@ -285,7 +285,7 @@ public class AsyncBlocTest {
   }
 
   [Fact]
-  public void BlocClassicCannotTriggerAction() {
+  public void BlocClassicCannotTriggerEffect() {
     using var bloc = new TestBlocClassicTrigger();
     Should.Throw<InvalidOperationException>(() => bloc.Trigger());
   }
@@ -370,10 +370,10 @@ public class AsyncBlocTest {
     }
   }
 
-  public class TestBlocWithActions : AsyncBloc<ITestEvent, int, int> {
+  public class TestBlocWithEffects : AsyncBloc<ITestEvent, int, int> {
     public const int INITIAL_STATE = 0;
 
-    public TestBlocWithActions() : base(INITIAL_STATE) {
+    public TestBlocWithEffects() : base(INITIAL_STATE) {
       On<ITestEvent.Increment>(Increment);
       On<ITestEvent.Decrement>(Decrement);
     }
@@ -398,7 +398,7 @@ public class AsyncBlocTest {
 
     public TestBlocClassicTrigger() : base(INITIAL_STATE) { }
 
-    public void Trigger() => Trigger("action");
+    public void Trigger() => Trigger("effect");
   }
 
   public class TestBlocDuplicateRegistrations : Bloc<string, int> {
