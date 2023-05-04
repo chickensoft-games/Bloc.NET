@@ -65,9 +65,10 @@ public partial class BlocGlueTests {
     var callEffect2 = 0;
 
     glue.Handle<IFakeBlocEffect.EffectOne>(
-      (effect) => { callEffect1++; effect.Value.ShouldBe(1); })
-      .Handle<IFakeBlocEffect.EffectTwo>(
-      (effect) => { callEffect2++; effect.Value.ShouldBe("2"); });
+      (effect) => { callEffect1++; effect.Value.ShouldBe(1); }
+    ).Handle<IFakeBlocEffect.EffectTwo>(
+      (effect) => { callEffect2++; effect.Value.ShouldBe("2"); }
+    );
 
     // Effects should get handled each time, regardless of if they are
     // identical to the previous one.
