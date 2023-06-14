@@ -74,7 +74,7 @@ public abstract class Bloc<TEvent, TState> : AsyncBloc<TEvent, TState, object>
   public Bloc(TState initialState) : base(initialState) { }
 
   /// <inheritdoc/>
-  protected override void Trigger(object action) =>
+  protected override void Trigger(object effect) =>
     throw new InvalidOperationException(
       "This bloc does not support effects. Use an AsyncBloc to trigger effects."
     );
